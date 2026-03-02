@@ -1,72 +1,58 @@
 #!/bin/bash
 
-# 1. The Wizard Main Menu
-ACTION=$(zenity --list --radiolist \
-    --title="Universal Installer Setup" \
-    --text="Welcome! What would you like to do?\n\n<small><i>Made by Learn to Code with Mack</i></small>" \
-    --column="Select" --column="Action" \
-    FALSE "1. Setup App (Add to App Drawer)" \
-    TRUE "2. Install Program" \
-    FALSE "3. Uninstall Program" \
-    --width=350 --height=250)
+# 1. START SCREEN (Now explicitly says v2.2)
+zenity --info --title="Universal Installer v2.2" \
+--text="Welcome to v2.2!\n\nPlease select one of the three options.\n\nMade by Learn to Code with Mack." \
+--ok-label="Let's Go!"
 
-if [ -z "$ACTION" ]; then exit 1; fi
+# 2. MAIN MENU
+# OK = Install | Extra = Uninstall | Cancel = App Drawer
+zenity --question --title="Main Menu" \
+--text="What would you like to do today?" \
+--ok-label="Install" \
+--extra-button="Uninstall" \
+--cancel-label="App Drawer"
 
-# 2. Handle the "Setup" Option
-if [ "$ACTION" = "1. Setup App (Add to App Drawer)" ]; then
-    SCRIPT_LOCATION=$(realpath "$0")
-    mkdir -p ~/.local/share/applications
-    echo "[Desktop Entry]
-Name=Universal Installer
-Comment=Made by Learn to Code with Mack
-Exec=$SCRIPT_LOCATION
-Icon=system-software-install
-Terminal=false
-Type=Application
-Categories=Utility;System;" > ~/.local/share/applications/universal-installer.desktop
-    chmod +x "$SCRIPT_LOCATION"
-    zenity --info --title="Setup Complete" --text="Added to app drawer!" --width=350
-    exit 0
-fi
+RESPONSE=$?
 
-# 3. Handle Install / Uninstall Logic
-if [ "$ACTION" = "2. Install Program" ]; then DO_ACTION="Install"; else DO_ACTION="Uninstall"; fi
+# 3. LOGIC FOR BUTTONS
+if [ $RESPONSE -eq 0 ]; then
+    # --- INSTALL FLOW ---
+    PROGRAM=$(zenity --entry --title="Install" --text="Enter the name of the program to install:")
+    [ -z "$PROGRAM" ] && exit 0
 
-PACKAGE=$(zenity --entry \
-    --title="$DO_ACTION Program" \
-    --text="Enter the exact name of the program to $DO_ACTION:" \
-    --width=400)
+    if command -v "$PROGRAM" &> /dev/null; then
+        zenity --error --title="Error" --text="You already have this program!" --button="Quit"
+        exit 1
+    fi
 
-if [ -z "$PACKAGE" ]; then exit 1; fi
+    sudo apt install "$PROGRAM" -y | zenity --progress --title="Installing" --text="Installing $PROGRAM..." --pulsate --auto-close
+    
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+        zenity --error --title="Error" --text="Could not find '$PROGRAM' or an unexpected error occurred." --button="Quit"
+        exit 1
+    fi
 
-# 4. Set the Command
-if command -v apt >/dev/null; then
-    if [ "$DO_ACTION" = "Install" ]; then CMD="apt install -y $PACKAGE"; else CMD="apt remove -y $PACKAGE"; fi
+elif [ $RESPONSE -eq 1 ] || [ "$RESPONSE" == "Uninstall" ]; then
+    # --- UNINSTALL FLOW ---
+    PROGRAM=$(zenity --entry --title="Uninstall" --text="Enter the name of the program to remove:")
+    [ -z "$PROGRAM" ] && exit 0
+    
+    sudo apt remove "$PROGRAM" -y | zenity --progress --title="Uninstalling" --text="Removing $PROGRAM..." --pulsate --auto-close
+
 else
-    zenity --error --text="Package manager not supported." ; exit 1
+    # --- APP DRAWER FLOW ---
+    APP_NAME=$(zenity --entry --title="App Name" --text="Name of the App:")
+    APP_EXEC=$(zenity --entry --title="Command" --text="Command to run it:")
+    [ -z "$APP_NAME" ] && exit 0
+    
+    echo -e "[Desktop Entry]\nName=$APP_NAME\nExec=$APP_EXEC\nType=Application\nTerminal=false" > ~/.local/share/applications/"$APP_NAME".desktop
+    zenity --info --text="$APP_NAME added to App Drawer!"
 fi
 
-# 5. THE PROGRESS BAR MAGIC
-# We run the command and pipe it to Zenity. 
-# --pulsate makes the bar bounce since we don't know the exact download time.
-(
-sudo $CMD
-) | zenity --progress \
-    --title="Working..." \
-    --text="Please wait while we $DO_ACTION **$PACKAGE**..." \
-    --pulsate \
-    --auto-close \
-    --width=400
+# 4. THE SIGNATURE END SCREEN (Working for all successful paths)
+zenity --info --title="Complete" \
+--text="Thank you for using this software!\n\nOpen source tool made by Learn to Code with Mack." \
+--button="Finish"
 
-# 6. Check if it actually worked
-if [ $? -eq 0 ]; then
-    zenity --info --title="Success!" --text="Successfully finished: $DO_ACTION $PACKAGE"
-else
-    zenity --error --title="Error" --text="Something went wrong. Check the package name."
-fi
-
-# 7. End Screen
-zenity --info \
-    --title="Thanks for using!" \
-    --text="Thank you for using this tool.\n\nOpen source installer made by **Learn to Code with Mack**." \
-    --width=350
+exit 0
